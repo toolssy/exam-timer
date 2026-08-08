@@ -397,6 +397,10 @@
       <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"></path><path d="M3 4v5h5"></path></svg>
       Reset
     </button>
+    <button onclick="shareApp()">
+      <svg viewBox="0 0 24 24"><path d="M12 16V4"></path><path d="M7 9l5-5 5 5"></path><path d="M5 14v5h14v-5"></path></svg>
+      Share
+    </button>
     <button onclick="toggleFull()">
       <svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"></path></svg>
       <span id="fullTxt">Full screen</span>
@@ -551,6 +555,26 @@
     $('display').classList.remove('on');
     $('setup').style.display='flex';
   };
+  window.shareApp = async function(){
+    var shareData = {
+      title: 'Exam Timer',
+      text: 'Use this Exam Timer:',
+      url: 'https://exam-timer-three.vercel.app/'
+    };
+    try{
+      if(navigator.share){
+        await navigator.share(shareData);
+      } else if(navigator.clipboard){
+        await navigator.clipboard.writeText(shareData.url);
+        alert('Exam Timer link copied.');
+      } else {
+        window.prompt('Copy this link:', shareData.url);
+      }
+    }catch(e){
+      // User may cancel the share sheet; no action needed.
+    }
+  };
+
   window.toggleFull = function(){
     if(!document.fullscreenElement){
       (document.documentElement.requestFullscreen||document.documentElement.webkitRequestFullscreen||function(){}).call(document.documentElement);
