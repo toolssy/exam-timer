@@ -3,6 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#11161d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Exam Timer">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon-192.png">
+
 <title>Exam Timer — live time and countdown</title>
 <meta name="description" content="A clean, silent classroom display showing the current time and an exam countdown together. Free, full screen, works on any device.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -665,5 +672,14 @@
   requestAnimationFrame(render);
 })();
 </script>
+
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('/service-worker.js');
+  });
+}
+</script>
+
 </body>
 </html>
