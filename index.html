@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Exam Timer — live time and countdown</title>
+<meta name="description" content="A clean, silent classroom display showing the current time and an exam countdown together. Free, full screen, works on any device.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    /* Dark "exam hall at dusk" theme (default) */
+    --bg:#11161d;
+    --bg-2:#161d26;
+    --panel:#1a212b;
+    --line:rgba(242,239,230,.10);
+    --line-strong:rgba(242,239,230,.22);
+    --ink:#f2efe6;          /* warm paper white */
+    --muted:#8a93a0;
+    --accent:#e0a458;       /* brass */
+    --warn:#d9614a;         /* muted terracotta (no longer used for timer) */
+    --ring-track:rgba(242,239,230,.10);
+    --timer:#e0a458;        /* countdown number + ring: yellow in dark mode */
+    --timer-done:#e0a458;   /* finished: stays yellow */
+    --digital:#ffffff;      /* digital clock: white in dark mode */
+    --digital-glow:rgba(255,255,255,.40);
+  }
+  :root[data-theme="light"]{
+    --bg:#f2efe6;
+    --bg-2:#ece8db;
+    --panel:#ffffff;
+    --line:rgba(26,33,43,.12);
+    --line-strong:rgba(26,33,43,.28);
+    --ink:#1a212b;
+    --muted:#6b7480;
+    --accent:#b5732c;
+    --warn:#c14a35;
+    --ring-track:rgba(26,33,43,.10);
+    --timer:#b5732c;        /* countdown digits: yellow in light mode */
+    --timer-done:#b5732c;   /* finished: stays yellow */
+    --digital:#ecb45e;      /* digital clock: keep yellow in light mode */
+    --digital-glow:rgba(236,180,94,.5);
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:radial-gradient(120% 120% at 50% -10%, var(--bg-2), var(--bg));
+    color:var(--ink);
+    font-family:"Space Grotesk", system-ui, sans-serif;
+    -webkit-font-smoothing:antialiased;
+    overflow:hidden;
+  }
+  .mono{font-family:"JetBrains Mono", ui-monospace, monospace; font-variant-numeric:tabular-nums; font-feature-settings:"tnum" 1;}
+  .eyebrow{
+    font-size:.72rem; letter-spacing:.28em; text-transform:uppercase;
+    color:var(--muted); font-weight:500;
+  }
+  button{font-family:inherit; cursor:pointer; color:inherit;}
+
+  /* ---------- SETUP SCREEN ---------- */
+  #setup{
+    height:100%; display:flex; flex-direction:column; align-items:center;
+    padding:clamp(16px,3vh,48px) clamp(18px,4vw,48px); overflow-y:auto;
+  }
+  .setup-inner{width:100%; max-width:520px; margin:auto 0; display:flex; flex-direction:column; gap:clamp(11px,2.2vh,26px);}
+  .brand{display:flex; align-items:baseline; gap:14px; flex-wrap:wrap;}
+  .brand h1{font-size:clamp(1.5rem,4.5vw,2.1rem); font-weight:600; letter-spacing:-.01em;}
+  .brand .ver{font-size:.68rem; color:var(--muted); letter-spacing:.12em; align-self:center;
+    border:1px solid var(--line-strong); padding:3px 9px; border-radius:999px;}
+  .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);align-self:center;}
+  .lede{color:var(--muted); font-size:clamp(.82rem,1.7vh,.95rem); line-height:1.5; max-width:42ch;}
+
+  .card{
+    background:var(--panel); border:1px solid var(--line);
+    border-radius:18px; padding:clamp(15px,2.4vh,22px);
+  }
+  .mode-tabs{display:flex; gap:6px; background:var(--bg-2); border:1px solid var(--line);
+    border-radius:12px; padding:4px; margin-bottom:clamp(10px,2vh,18px);}
+  .mode-tabs button{
+    flex:1; border:none; background:transparent; padding:9px 8px; border-radius:8px;
+    font-size:.85rem; font-weight:500; color:var(--muted); transition:.18s;
+  }
+  .mode-tabs button[aria-selected="true"]{background:var(--panel); color:var(--ink); box-shadow:0 1px 0 var(--line-strong);}
+
+  .field-label{font-size:.78rem; color:var(--muted); margin-bottom:10px; display:block;}
+  .duration-row{display:flex; align-items:flex-end; gap:14px; justify-content:center; margin-bottom:6px;}
+  .dur-unit{display:flex; flex-direction:column; align-items:center; gap:6px;}
+  .dur-unit input{
+    width:104px; background:var(--bg-2); border:1px solid var(--line); color:var(--ink);
+    border-radius:12px; padding:clamp(9px,1.6vh,14px) 0; text-align:center; font-size:clamp(1.6rem,4.2vh,2.1rem); font-weight:500;
+  }
+  .dur-unit input:focus{outline:none; border-color:var(--accent);}
+  .dur-unit span{font-size:.72rem; letter-spacing:.18em; text-transform:uppercase; color:var(--muted);}
+  .dur-colon{font-size:2rem; color:var(--muted); padding-bottom:clamp(16px,3vh,24px);}
+
+  #endTimeWrap{display:none; text-align:center;}
+  #endTimeWrap input{
+    background:var(--bg-2); border:1px solid var(--line); color:var(--ink);
+    border-radius:12px; padding:14px 16px; font-size:1.8rem; font-weight:500;
+  }
+  #endTimeWrap input:focus{outline:none; border-color:var(--accent);}
+
+  .presets{display:flex; flex-wrap:wrap; gap:8px; margin-top:clamp(10px,1.8vh,18px);}
+  .presets button{
+    border:1px solid var(--line); background:var(--bg-2); color:var(--ink);
+    border-radius:999px; padding:8px 15px; font-size:.85rem; transition:.18s;
+  }
+  .presets button:hover{border-color:var(--accent); color:var(--accent);}
+
+  .start-btn{
+    width:100%; border:none; border-radius:14px; padding:clamp(13px,2.1vh,18px);
+    background:var(--accent); color:#1a212b; font-size:1.05rem; font-weight:600;
+    letter-spacing:.01em; transition:.18s; margin-top:4px;
+  }
+  .start-btn:hover{filter:brightness(1.06);}
+  .opts{display:flex; gap:18px; align-items:center; flex-wrap:wrap; color:var(--muted); font-size:.85rem;}
+  .opts label{display:flex; align-items:center; gap:8px; cursor:pointer;}
+  .opts input{accent-color:var(--accent); width:15px; height:15px;}
+  .theme-toggle{margin-left:auto; border:1px solid var(--line); background:transparent;
+    color:var(--muted); border-radius:999px; padding:6px 13px; font-size:.8rem;}
+  .testbtn{border:1px solid var(--line); background:transparent; color:var(--muted);
+    border-radius:999px; padding:5px 12px; font-size:.78rem;}
+  .testbtn:hover{border-color:var(--accent); color:var(--accent);}
+
+  /* School branding panel — setup screen only */
+  .brand-card .field-label{margin-bottom:14px;}
+  .brand-row{display:flex; flex-wrap:wrap; align-items:center; gap:12px;}
+  .logo-btn{border:1px solid var(--line); background:var(--bg-2); color:var(--ink);
+    border-radius:12px; padding:11px 16px; font-size:.85rem; cursor:pointer; transition:.18s;
+    display:inline-flex; align-items:center; gap:8px;}
+  .logo-btn:hover{border-color:var(--accent); color:var(--accent);}
+  .colour-pick{display:flex; align-items:center; gap:9px; font-size:.85rem; color:var(--muted);}
+  .colour-pick input[type="color"]{width:38px; height:34px; border:1px solid var(--line);
+    border-radius:9px; background:var(--bg-2); cursor:pointer; padding:3px;}
+  .name-input{flex:1; min-width:160px; background:var(--bg-2); border:1px solid var(--line);
+    color:var(--ink); border-radius:12px; padding:11px 14px; font-size:.9rem;}
+  .name-input:focus{outline:none; border-color:var(--accent);}
+  #logoPreview{display:none; max-height:46px; max-width:150px; object-fit:contain;
+    margin-top:14px; border-radius:6px;}
+  .brand-hint{color:var(--muted); font-size:.82rem; line-height:1.5; margin-top:12px;}
+  .tailor-line{display:flex; align-items:center; justify-content:center; gap:10px;
+    text-align:center; color:var(--muted); font-size:.92rem; line-height:1.5;
+    border:1px solid var(--line); border-radius:14px; padding:16px 18px;}
+  .tailor-line .dot{width:7px; height:7px; border-radius:50%; background:var(--accent); flex:none;}
+
+  /* Advertisement slot — setup screen only, never on the exam display */
+  .ad-slot{
+    border:1px dashed var(--line-strong); border-radius:14px; min-height:90px;
+    display:flex; align-items:center; justify-content:center; color:var(--muted);
+    font-size:.78rem; letter-spacing:.04em; text-align:center; padding:14px;
+  }
+  .ad-slot .eyebrow{margin-bottom:0;}
+
+  /* ---------- DISPLAY SCREEN ---------- */
+  #display{display:none; height:100%; position:relative;}
+  #display.on{display:flex; flex-direction:column;}
+
+  .display-header{display:none; align-items:center; justify-content:center; gap:16px;
+    padding:clamp(14px,2.5vh,28px) 20px 0;}
+  .display-header.on{display:flex;}
+  .display-header img{max-height:clamp(36px,7vh,68px); max-width:200px; object-fit:contain;}
+  .display-header .school-name{font-size:clamp(1rem,2.6vh,1.5rem); font-weight:500; color:var(--ink); letter-spacing:.01em;}
+
+  .display-main{
+    flex:1; display:grid; grid-template-columns:1fr; place-items:center;
+    gap:clamp(20px,4vh,60px); padding:clamp(20px,3vw,40px); width:100%;
+  }
+  @media(min-aspect-ratio:1/1){
+    .display-main{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr); gap:clamp(30px,5vw,90px);}
+  }
+
+  /* Countdown (hero) */
+  .countdown{display:flex; flex-direction:column; align-items:center; gap:18px; min-width:0;}
+  .cd-ring-wrap{position:relative; width:min(46vh,40vw,520px); aspect-ratio:1; container-type:size;}
+  @media(max-aspect-ratio:1/1){.cd-ring-wrap{width:min(72vw,52vh);}}
+  .cd-ring-wrap svg{width:100%; height:100%; transform:rotate(-90deg);}
+  .cd-track{fill:none; stroke:var(--ring-track); stroke-width:5;}
+  .cd-prog{fill:none; stroke:var(--timer); stroke-width:5; stroke-linecap:round; transition:stroke .4s;}
+  .cd-center{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; padding:0 6%;}
+  .cd-time{font-size:21cqw; font-weight:500; line-height:1; letter-spacing:-.01em; white-space:nowrap; color:var(--timer); transition:color .4s;}
+  .countdown.has-hours .cd-time{font-size:14cqw;}
+  .cd-label{font-size:.72rem; letter-spacing:.3em; text-transform:uppercase; color:var(--muted);}
+  .countdown.done .cd-time{color:var(--timer-done);}
+  .countdown.done .cd-prog{stroke:var(--timer-done);}
+  @keyframes softpulse{0%,100%{opacity:1}50%{opacity:.45}}
+  .countdown.final .cd-time{animation:softpulse 1.6s ease-in-out infinite;}
+
+  /* Time-now panel */
+  .now-panel{display:flex; flex-direction:column; align-items:center; gap:22px; min-width:0;}
+  .analog{width:min(30vh,26vw,300px); aspect-ratio:1;}
+  @media(max-aspect-ratio:1/1){.analog{width:min(42vw,32vh);}}
+  .analog .face{fill:none; stroke:var(--line-strong); stroke-width:2;}
+  .analog .tick{stroke:var(--muted);}
+  .analog .tick.hr{stroke:var(--ink);}
+  .analog .hand-h,.analog .hand-m{stroke:var(--ink); stroke-linecap:round;}
+  .analog .hand-s{stroke:var(--accent); stroke-linecap:round;}
+  .analog .cap{fill:var(--accent);}
+  .now-digital{text-align:center; display:flex; flex-direction:column; align-items:center; gap:12px;}
+  .now-digital .screen{
+    background:#0b0f13; border:1px solid var(--line-strong);
+    border-radius:14px; padding:.3em .65em;
+    box-shadow:inset 0 2px 14px rgba(0,0,0,.6), 0 1px 0 var(--line);
+  }
+  .now-digital .t{font-size:clamp(1.8rem,5vh,3.2rem); font-weight:500; line-height:1;
+    color:var(--digital); letter-spacing:.05em; text-shadow:0 0 16px var(--digital-glow);}
+  .now-digital .ampm{font-size:.5em; color:#9c8154; margin-left:.35em; text-shadow:none;}
+  .now-digital .lbl{margin-top:0;}
+  .analog .num{fill:var(--ink); font-family:"Space Grotesk", sans-serif;
+    font-size:15px; font-weight:600; text-anchor:middle; dominant-baseline:central;}
+
+  /* Controls bar */
+  .controls{
+    display:flex; align-items:center; justify-content:center; gap:10px; flex-wrap:wrap;
+    padding:14px; transition:opacity .4s; opacity:1;
+  }
+  .controls.hidden{opacity:0; pointer-events:none;}
+  .controls button{
+    border:1px solid var(--line); background:var(--panel); color:var(--ink);
+    border-radius:999px; padding:11px 18px; font-size:.85rem; font-weight:500; transition:.16s;
+    display:inline-flex; align-items:center; gap:7px;
+  }
+  .controls button:hover{border-color:var(--accent); color:var(--accent);}
+  .controls button.primary{background:var(--accent); color:#1a212b; border-color:var(--accent);}
+  .controls .spacer{flex-basis:100%; height:0;}
+  .controls svg{width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round;}
+
+  .hint{position:absolute; bottom:10px; left:0; right:0; text-align:center; font-size:.7rem; color:var(--muted); opacity:.6; transition:opacity .4s;}
+  .hint.hidden{opacity:0;}
+
+  /* ---------- EXPIRED SCREEN ---------- */
+  #expired{display:none; height:100%; flex-direction:column; align-items:center;
+    justify-content:center; gap:14px; text-align:center; padding:40px;}
+  #expired.on{display:flex;}
+  #expired .brand{justify-content:center; margin-bottom:8px;}
+  .expired-msg{font-size:clamp(1.3rem,4.5vw,1.9rem); font-weight:500; color:var(--ink);}
+  .expired-sub{color:var(--muted); font-size:.95rem; max-width:42ch; line-height:1.6;}
+
+  @media (prefers-reduced-motion: reduce){
+    .countdown.final .cd-time{animation:none;}
+    .cd-prog{transition:none;}
+  }
+
+  /* Very short screens (e.g. landscape phones): drop the intro line so the
+     setup fits without scrolling. */
+  @media (max-height: 640px){
+    .lede{display:none;}
+    .setup-inner{gap:clamp(9px,1.8vh,16px);}
+  }
+
+  /* Portrait / mobile: shrink clock and tighten controls so the whole bar
+     (including Reset and the buttons after it) always stays on screen. */
+  @media (max-aspect-ratio: 1/1){
+    .display-main{gap:clamp(8px,1.8vh,20px); padding:clamp(10px,3vw,22px);}
+    .cd-ring-wrap{width:min(60vw,36vh);}
+    .analog{width:min(30vw,18vh);}
+    .now-panel{gap:12px;}
+    .now-digital .t{font-size:clamp(1.4rem,3.8vh,2.3rem);}
+    .controls{gap:8px; padding:10px 10px calc(12px + env(safe-area-inset-bottom)); flex-shrink:0;}
+    .controls button{padding:9px 13px; font-size:.8rem;}
+    .controls svg{width:14px; height:14px;}
+    .hint{display:none;}
+  }
+</style>
+</head>
+<body>
+
+<!-- ===================== SETUP ===================== -->
+<section id="setup">
+  <div class="setup-inner">
+    <div>
+      <div class="brand"><span class="dot"></span><h1>Exam Timer</h1><span class="ver">v14</span></div>
+      <p class="lede" style="margin-top:10px;">The current time and your exam countdown, side by side on one calm screen. Silent by design — set the time, then go full screen.</p>
+    </div>
+
+    <div class="card">
+      <div class="mode-tabs" role="tablist">
+        <button id="tabLength" role="tab" aria-selected="true" onclick="setMode('length')">Set length</button>
+        <button id="tabEnd" role="tab" aria-selected="false" onclick="setMode('end')">Finish at a time</button>
+      </div>
+
+      <div id="lengthWrap">
+        <span class="field-label">How long is the exam?</span>
+        <div class="duration-row">
+          <div class="dur-unit"><input class="mono" id="inHours" type="number" min="0" max="23" value="1" inputmode="numeric"><span>hours</span></div>
+          <div class="dur-colon mono">:</div>
+          <div class="dur-unit"><input class="mono" id="inMins" type="number" min="0" max="59" value="30" inputmode="numeric"><span>minutes</span></div>
+        </div>
+        <div class="presets">
+          <button onclick="preset(0,15)">15 min</button>
+          <button onclick="preset(0,30)">30 min</button>
+          <button onclick="preset(0,45)">45 min</button>
+          <button onclick="preset(1,0)">1 hr</button>
+          <button onclick="preset(1,30)">1 hr 30</button>
+          <button onclick="preset(2,0)">2 hr</button>
+          <button onclick="preset(3,0)">3 hr</button>
+        </div>
+      </div>
+
+      <div id="endTimeWrap">
+        <span class="field-label">What time does the exam finish?</span>
+        <input class="mono" id="inEnd" type="time" value="11:30">
+        <p class="lede" style="margin:12px auto 0;">Counts down to this clock time today.</p>
+      </div>
+    </div>
+
+    <button class="start-btn" onclick="startExam()">Start exam</button>
+
+    <div class="opts">
+      <label><input type="checkbox" id="optAnalog" checked> Show analogue clock</label>
+      <label><input type="checkbox" id="opt24h" checked> 24-hour time</label>
+      <label><input type="checkbox" id="optSound"> Sound when time's up</label>
+      <button class="testbtn" type="button" onclick="testSound()">Test sound</button>
+      <button class="theme-toggle" onclick="toggleTheme()" id="themeBtn">☾ Dark</button>
+    </div>
+
+    <!-- Branding is offered as a paid setup service, so this is just the offer line. -->
+    <p class="tailor-line"><span class="dot"></span>We can tailor this app with your School Logo and Vision Statement.</p>
+
+    <!-- ======================================================================
+         ADVERTISEMENT — hidden for now. When your AdSense is approved:
+         1) delete  style="display:none"  from the div below to show it
+         2) paste your AdSense code inside the div (replacing the placeholder)
+         It only ever shows on this setup screen, never on the exam display.
+    ======================================================================= -->
+    <div class="ad-slot" id="adSlot" style="display:none">
+      <div>
+        <div class="eyebrow" style="margin-bottom:6px;">Advertisement</div>
+        Ad space — paste your ad code in the <code>#adSlot</code> div. Hidden during the exam.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== DISPLAY ===================== -->
+<section id="display">
+  <div class="display-header" id="displayHeader">
+    <img id="displayLogo" alt="" hidden>
+    <span class="school-name" id="displayName"></span>
+  </div>
+  <div class="display-main">
+
+    <!-- Countdown hero -->
+    <div class="countdown" id="countdown">
+      <div class="cd-ring-wrap">
+        <svg viewBox="0 0 200 200" aria-hidden="true">
+          <circle class="cd-track" cx="100" cy="100" r="92"></circle>
+          <circle class="cd-prog" id="cdProg" cx="100" cy="100" r="92"></circle>
+        </svg>
+        <div class="cd-center">
+          <div class="cd-time mono" id="cdTime">00:00</div>
+          <div class="cd-label" id="cdLabel">Time remaining</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Time now -->
+    <div class="now-panel">
+      <svg class="analog" id="analog" viewBox="0 0 200 200" aria-hidden="true">
+        <circle class="face" cx="100" cy="100" r="94"></circle>
+        <g id="ticks"></g>
+        <g class="nums">
+          <text class="num" x="100" y="34">12</text>
+          <text class="num" x="166" y="100">3</text>
+          <text class="num" x="100" y="166">6</text>
+          <text class="num" x="34" y="100">9</text>
+        </g>
+        <line class="hand-h" id="handH" x1="100" y1="100" x2="100" y2="55" stroke-width="5"></line>
+        <line class="hand-m" id="handM" x1="100" y1="100" x2="100" y2="34" stroke-width="3.5"></line>
+        <line class="hand-s" id="handS" x1="100" y1="112" x2="100" y2="26" stroke-width="1.6"></line>
+        <circle class="cap" cx="100" cy="100" r="4.5"></circle>
+      </svg>
+      <div class="now-digital">
+        <div class="screen"><div class="t mono" id="nowDigital">00:00:00</div></div>
+        <div class="lbl eyebrow">Time now</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls" id="controls">
+    <button class="primary" id="btnPause" onclick="togglePause()">
+      <svg id="pauseIcon" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14"></rect><rect x="14" y="5" width="4" height="14"></rect></svg>
+      <span id="pauseTxt">Pause</span>
+    </button>
+    <button onclick="addMinutes(1)">+1 min</button>
+    <button onclick="addMinutes(5)">+5 min</button>
+    <button onclick="resetCountdown()">
+      <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"></path><path d="M3 4v5h5"></path></svg>
+      Reset
+    </button>
+    <button onclick="toggleFull()">
+      <svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"></path></svg>
+      <span id="fullTxt">Full screen</span>
+    </button>
+    <button onclick="backToSetup()">
+      <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"></path></svg>
+      Setup
+    </button>
+  </div>
+  <div class="hint" id="hint">Space: pause · F: full screen · Esc: exit full screen</div>
+</section>
+
+<!-- ===================== EXPIRED ===================== -->
+<section id="expired">
+  <div class="expired-inner">
+    <div class="brand"><span class="dot"></span><h1>Exam Timer</h1></div>
+    <p class="expired-msg">This shared timer is no longer active.</p>
+    <p class="expired-sub" id="expiredSub"></p>
+  </div>
+</section>
+
+<script>
+(function(){
+  "use strict";
+  // ---------- State ----------
+  var mode = 'length';
+  var totalMs = 0;       // full exam length
+  var remainingMs = 0;   // when paused, holds remaining
+  var endAt = 0;         // timestamp the countdown ends (when running)
+  var running = false;
+  var finished = false;
+  var use24h = true;
+  var showAnalog = true;
+  var soundOn = false;
+  var audioCtx = null;
+  var logoDataUrl = '';
+
+  var CIRC = 2 * Math.PI * 92;
+
+  // ---------- Helpers ----------
+  function $(id){return document.getElementById(id);}
+  function pad(n){return (n<10?'0':'')+n;}
+
+  // ---------- Setup interactions ----------
+  window.setMode = function(m){
+    mode = m;
+    $('tabLength').setAttribute('aria-selected', m==='length');
+    $('tabEnd').setAttribute('aria-selected', m==='end');
+    $('lengthWrap').style.display = m==='length' ? '' : 'none';
+    $('endTimeWrap').style.display = m==='end' ? 'block' : 'none';
+  };
+  window.preset = function(h,mn){ $('inHours').value=h; $('inMins').value=mn; };
+  window.toggleTheme = function(){
+    var root=document.documentElement;
+    var dark = root.getAttribute('data-theme')!=='light';
+    root.setAttribute('data-theme', dark?'light':'dark');
+    $('themeBtn').textContent = dark ? '☀ Light' : '☾ Dark';
+  };
+
+  function buildTicks(){
+    var g=$('ticks'), html='';
+    for(var i=0;i<60;i++){
+      var hr = i%5===0;
+      var a = i*6*Math.PI/180;
+      var r1 = hr?80:85, r2=90;
+      var x1=100+r1*Math.sin(a), y1=100-r1*Math.cos(a);
+      var x2=100+r2*Math.sin(a), y2=100-r2*Math.cos(a);
+      html+='<line class="tick'+(hr?' hr':'')+'" x1="'+x1.toFixed(1)+'" y1="'+y1.toFixed(1)+'" x2="'+x2.toFixed(1)+'" y2="'+y2.toFixed(1)+'" stroke-width="'+(hr?2.4:1)+'"></line>';
+    }
+    g.innerHTML=html;
+  }
+
+  // ---------- Expiry (soft limit) ----------
+  // To extend access later, change this date. Format: (year, month-1, day, hour, min, sec)
+  var EXPIRES = new Date(2026, 5, 18, 23, 59, 59); // end of 18 June 2026, device local time
+  function isExpired(){ return Date.now() > EXPIRES.getTime(); }
+  function showExpired(){
+    $('setup').style.display = 'none';
+    $('display').classList.remove('on');
+    $('expired').classList.add('on');
+    $('expiredSub').textContent = 'This version was available until ' +
+      EXPIRES.toLocaleDateString(undefined,{day:'numeric',month:'long',year:'numeric'}) +
+      '. Please get in touch for continued access.';
+  }
+
+  // ---------- Start / control ----------
+  window.startExam = function(){
+    use24h = $('opt24h').checked;
+    showAnalog = $('optAnalog').checked;
+    soundOn = $('optSound').checked;
+    if(soundOn) ensureAudio();
+    $('analog').style.display = showAnalog ? '' : 'none';
+
+    var ms;
+    if(mode==='length'){
+      var h = Math.max(0, parseInt($('inHours').value,10)||0);
+      var m = Math.max(0, parseInt($('inMins').value,10)||0);
+      ms = (h*3600 + m*60)*1000;
+    } else {
+      var v = $('inEnd').value || '00:00';
+      var parts = v.split(':');
+      var target = new Date();
+      target.setHours(parseInt(parts[0],10)||0, parseInt(parts[1],10)||0, 0, 0);
+      var now = new Date();
+      if(target <= now) target.setDate(target.getDate()+1); // next occurrence
+      ms = target - now;
+    }
+    if(ms <= 0) ms = 60*1000;
+
+    totalMs = ms;
+    remainingMs = ms;
+    finished = false;
+    endAt = Date.now() + ms;
+    running = true;
+    $('cdProg').style.strokeDasharray = CIRC;
+
+    $('setup').style.display='none';
+    $('display').classList.add('on');
+
+    setPauseUI();
+    resetIdleTimer();
+  };
+
+  window.togglePause = function(){
+    if(finished) return;
+    if(running){ remainingMs = Math.max(0, endAt - Date.now()); running=false; }
+    else { endAt = Date.now() + remainingMs; running=true; }
+    setPauseUI();
+  };
+  function setPauseUI(){
+    $('pauseTxt').textContent = running ? 'Pause' : 'Resume';
+    $('pauseIcon').innerHTML = running
+      ? '<rect x="6" y="5" width="4" height="14"></rect><rect x="14" y="5" width="4" height="14"></rect>'
+      : '<path d="M7 4l13 8-13 8z" fill="currentColor" stroke="none"></path>';
+  }
+  window.addMinutes = function(m){
+    var add = m*60*1000;
+    totalMs += add;
+    if(running){ endAt += add; } else { remainingMs += add; }
+    if(finished){ finished=false; running=true; endAt=Date.now()+add; $('countdown').classList.remove('done','final'); }
+    setPauseUI();
+  };
+  window.resetCountdown = function(){
+    remainingMs = totalMs;
+    endAt = Date.now() + totalMs;
+    running = false; finished=false;
+    $('countdown').classList.remove('done','final','low');
+    setPauseUI();
+  };
+  window.backToSetup = function(){
+    running=false;
+    $('display').classList.remove('on');
+    $('setup').style.display='flex';
+  };
+  window.toggleFull = function(){
+    if(!document.fullscreenElement){
+      (document.documentElement.requestFullscreen||document.documentElement.webkitRequestFullscreen||function(){}).call(document.documentElement);
+    } else {
+      (document.exitFullscreen||document.webkitExitFullscreen||function(){}).call(document);
+    }
+  };
+  document.addEventListener('fullscreenchange', function(){
+    $('fullTxt').textContent = document.fullscreenElement ? 'Exit full screen' : 'Full screen';
+  });
+
+  // ---------- Idle controls hiding ----------
+  var idleTimer=null;
+  function resetIdleTimer(){
+    $('controls').classList.remove('hidden');
+    $('hint').classList.remove('hidden');
+    clearTimeout(idleTimer);
+    idleTimer=setTimeout(function(){
+      if($('display').classList.contains('on')){
+        $('controls').classList.add('hidden');
+        $('hint').classList.add('hidden');
+      }
+    }, 4000);
+  }
+  ['mousemove','touchstart','keydown'].forEach(function(ev){
+    document.addEventListener(ev, function(){ if($('display').classList.contains('on')) resetIdleTimer(); });
+  });
+
+  // ---------- Keyboard ----------
+  document.addEventListener('keydown', function(e){
+    if(!$('display').classList.contains('on')) return;
+    if(e.code==='Space'){ e.preventDefault(); togglePause(); }
+    else if(e.key==='f'||e.key==='F'){ toggleFull(); }
+  });
+
+  // ---------- Sound (generated, no audio files needed) ----------
+  function ensureAudio(){
+    try{
+      if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+      if(audioCtx.state==='suspended') audioCtx.resume();
+    }catch(e){ audioCtx=null; }
+  }
+  function playChime(){
+    if(!audioCtx) return;
+    var t0 = audioCtx.currentTime;
+    // Gentle three-note alert: softer volume, warmer notes, slower fade.
+    [523.25, 659.25, 523.25].forEach(function(freq, i){
+      var t = t0 + i*0.65;
+      var osc = audioCtx.createOscillator();
+      var gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.09, t+0.08);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t+1.25);
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(t); osc.stop(t+1.3);
+    });
+  }
+  window.testSound = function(){ ensureAudio(); playChime(); };
+
+  // ---------- Render loop ----------
+  function render(){
+    var now = new Date();
+
+    // Time of day digital
+    var h=now.getHours(), m=now.getMinutes(), s=now.getSeconds();
+    var hd=h, ampm='';
+    if(!use24h){ ampm = h>=12?' PM':' AM'; hd = h%12; if(hd===0) hd=12; }
+    $('nowDigital').innerHTML = (use24h?pad(hd):hd)+':'+pad(m)+':'+pad(s)+(ampm?'<span class="ampm">'+ampm.trim()+'</span>':'');
+
+    // Analogue (smooth sweep)
+    if(showAnalog){
+      var ms = now.getMilliseconds();
+      var sa = (s + ms/1000)*6;
+      var ma = (m + s/60)*6;
+      var ha = ((h%12) + m/60)*30;
+      $('handS').setAttribute('transform','rotate('+sa+' 100 100)');
+      $('handM').setAttribute('transform','rotate('+ma+' 100 100)');
+      $('handH').setAttribute('transform','rotate('+ha+' 100 100)');
+    }
+
+    // Countdown
+    var rem = running ? (endAt - Date.now()) : remainingMs;
+    if(rem <= 0){
+      rem = 0;
+      if(!finished){
+        finished=true; running=false;
+        $('cdTime').textContent='TIME';
+        $('cdLabel').textContent='Exam finished';
+        $('countdown').classList.add('done');
+        setPauseUI();
+        if(soundOn) playChime();
+      }
+    }
+    if(!finished){
+      var totSec = Math.ceil(rem/1000);
+      var ch=Math.floor(totSec/3600), cm=Math.floor((totSec%3600)/60), cs=totSec%60;
+      $('cdTime').textContent = ch>0 ? (ch+':'+pad(cm)+':'+pad(cs)) : (pad(cm)+':'+pad(cs));
+      $('countdown').classList.toggle('has-hours', ch>0);
+
+      var cd=$('countdown');
+      cd.classList.toggle('low', rem <= 5*60*1000);
+      cd.classList.toggle('final', rem <= 60*1000 && rem>0);
+    }
+    // Progress ring
+    var frac = totalMs>0 ? Math.max(0, rem/totalMs) : 0;
+    $('cdProg').style.strokeDashoffset = (CIRC*(1-frac)).toFixed(1);
+    $('cdProg').style.strokeDasharray = CIRC;
+
+    requestAnimationFrame(render);
+  }
+
+  // ---------- Init ----------
+  // Expiry is OFF — the tool runs indefinitely. To lend it with a time limit again,
+  // set the EXPIRES date above and restore: if(isExpired()){ showExpired(); return; }
+  buildTicks();
+
+  requestAnimationFrame(render);
+})();
+</script>
+</body>
+</html>
